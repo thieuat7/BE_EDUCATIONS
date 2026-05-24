@@ -1,5 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
-import { Question } from './question.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
+import { Question } from '@modules/questions/entities/question.entity';
 
 @Entity({ name: 'AnswerChoice' })
 export class AnswerChoice {
@@ -15,6 +21,9 @@ export class AnswerChoice {
   @Column()
   QuestionID: number;
 
-  @ManyToOne(() => Question, (question) => question.answerChoices, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Question, (question) => question.answerChoices, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'QuestionID' })
   Question: Question;
 }

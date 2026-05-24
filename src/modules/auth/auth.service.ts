@@ -18,66 +18,57 @@ export class AuthService {
 
   // 1. Đăng ký tài khoản
   async register(dto: RegisterDto) {
-    // Sử dụng hàm findOne mới để kiểm tra email
     const existingUser = await this.usersService.findByEmail(dto.email);
     if (existingUser) {
       throw new BadRequestException('Email này đã được sử dụng!');
     }
 
-    // Mã hóa mật khẩu
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
-
-    // Lưu người dùng mới (Service đã tự động gán role 'user' mặc định)
     const newUser = await this.usersService.create({
-      ...dto,
-      fullName: dto.fullName,
-      password: hashedPassword,
+      Email: dto.email,
+      FullName: dto.fullName,
+      Password: dto.password,
     });
 
     return {
       user: {
-        id: newUser.publicId,
-        email: newUser.email,
-        fullName: newUser.fullName,
+        id: newUser.UserID,
+        email: newUser.Email,
+        fullName: newUser.FullName,
+        role: newUser.Role,
       },
     };
   }
 
   // 2. Đăng nhập
   async login(dto: LoginDto) {
-    // Lấy user kèm cả Password và Roles chỉ với 1 lần gọi hàm findOne
     const user = await this.usersService.findOne(
-      { email: dto.email },
-      { includePassword: true, includeRoles: true },
+      { Email: dto.email },
+      { includePassword: true },
     );
 
-    if (!user || !user.password) {
+    if (!user || !user.Password) {
       throw new BadRequestException('Email hoặc mật khẩu không đúng!');
     }
 
-    // So sánh mật khẩu
-    const isPasswordValid = await bcrypt.compare(dto.password, user.password);
+    const isPasswordValid = await bcrypt.compare(dto.password, user.Password);
     if (!isPasswordValid) {
       throw new BadRequestException('Email hoặc mật khẩu không đúng!');
     }
 
-    // Trích xuất danh sách tên Roles (Ví dụ: ['user', 'admin'])
-    const roleNames = user.roles?.map((role) => role.name) || [];
+    const roles = [user.Role];
 
-    // Tạo bộ Access + Refresh token
     const { accessToken, refreshToken } =
-      await this.tokenService.generateTokens(user.id, user.email, roleNames);
+      await this.tokenService.generateTokens(user.UserID, user.Email, roles);
 
-    // Lưu hash của refresh token vào DB (Sử dụng hàm update đã tối ưu)
-    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
-    await this.usersService.setCurrentRefreshToken(hashedRefreshToken, user.id);
+    // Lưu Refresh Token vào Database
+    await this.usersService.updateRefreshToken(user.UserID, refreshToken);
 
     return {
       user: {
-        id: user.publicId,
-        email: user.email,
-        fullName: user.fullName,
-        roles: roleNames,
+        id: user.UserID,
+        email: user.Email,
+        fullName: user.FullName,
+        roles: roles,
       },
       token: {
         accessToken,
@@ -86,37 +77,36 @@ export class AuthService {
     };
   }
 
+  async getMe(userId: number) {
+    return this.usersService.findById(userId);
+  }
+
   // 3. Làm mới Token
-  async refreshToken(userId: number, refreshToken: string) {
-    // Lấy user kèm theo hashedRefreshToken và Roles
-    const user = await this.usersService.findOne(
-      { id: userId },
-      { includePassword: true, includeRoles: true },
-    );
+  async refreshToken(userId: number, providedRefreshToken: string) {
+    const user = await this.usersService.findById(userId);
 
-    if (!user || !user.currentHashedRefreshToken) {
-      throw new UnauthorizedException('Phiên làm việc đã hết hạn');
+    // Kiểm tra xem User có tồn tại và có đang sở hữu refresh token không
+    if (!user || !user.RefreshToken) {
+      throw new UnauthorizedException(
+        'Truy cập bị từ chối. Vui lòng đăng nhập lại.',
+      );
     }
 
-    // Kiểm tra tính hợp lệ của refresh token gửi lên
-    const isTokenValid = await bcrypt.compare(
-      refreshToken,
-      user.currentHashedRefreshToken,
-    );
-
-    if (!isTokenValid) {
-      throw new UnauthorizedException('Refresh token không hợp lệ');
+    // So sánh token client gửi lên với token lưu trong DB
+    if (user.RefreshToken !== providedRefreshToken) {
+      throw new UnauthorizedException(
+        'Refresh Token không hợp lệ hoặc đã hết hạn.',
+      );
     }
 
-    const roleNames = user.roles?.map((role) => role.name) || [];
+    const roles = [user.Role];
 
-    // Tạo bộ token mới
+    // Cấp phát bộ token mới
     const { accessToken, refreshToken: newRefreshToken } =
-      await this.tokenService.generateTokens(user.id, user.email, roleNames);
+      await this.tokenService.generateTokens(user.UserID, user.Email, roles);
 
-    // Cập nhật lại hash mới vào DB
-    const hashedRefreshToken = await bcrypt.hash(newRefreshToken, 10);
-    await this.usersService.setCurrentRefreshToken(hashedRefreshToken, user.id);
+    // Lưu Refresh Token mới vào DB (xoay vòng token - token rotation)
+    await this.usersService.updateRefreshToken(user.UserID, newRefreshToken);
 
     return {
       accessToken,
@@ -126,8 +116,9 @@ export class AuthService {
 
   // 4. Đăng xuất
   async logout(userId: number) {
-    // Truyền null để xóa token trong DB
-    await this.usersService.setCurrentRefreshToken(null, userId);
+    // Đặt Refresh Token trong DB về null để vô hiệu hóa token cũ
+    await this.usersService.updateRefreshToken(userId, null);
+
     return { message: 'Đăng xuất thành công' };
   }
 }

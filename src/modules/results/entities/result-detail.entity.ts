@@ -4,6 +4,7 @@ import {
   Column,
   ManyToOne,
   Unique,
+  JoinColumn,
 } from 'typeorm';
 import { Result } from './result.entity';
 import { Question } from '@modules/questions/entities/question.entity';
@@ -30,13 +31,16 @@ export class ResultDetail {
   @ManyToOne(() => Result, (result) => result.resultDetails, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'ResultID' })
   Result: Result;
 
   @ManyToOne(() => Question, (question) => question.resultDetails, {
     onDelete: 'NO ACTION',
   })
+  @JoinColumn({ name: 'QuestionID' })
   Question: Question;
 
   @ManyToOne(() => AnswerChoice, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'SelectedChoiceID' })
   SelectedChoice: AnswerChoice;
 }

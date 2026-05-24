@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   HttpCode,
   HttpStatus,
@@ -38,6 +39,15 @@ export class AuthController {
   @ApiOperation({ summary: 'Đăng nhập hệ thống' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Get('me')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Lấy thông tin người dùng hiện tại' })
+  @UseAuth()
+  @ApiBearerAuth()
+  getMe(@GetCurrentUser('userId') userId: number) {
+    return this.authService.getMe(userId);
   }
 
   // Làm mới token

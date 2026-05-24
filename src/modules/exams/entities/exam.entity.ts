@@ -1,7 +1,14 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
-import { Subject } from './subject.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn, // 💡 Đã thêm import này
+} from 'typeorm';
+import { Subject } from '@modules/subjects/entities/subject.entity';
 import { ExamDetail } from './exam-detail.entity';
-import { Result } from './result.entity';
+import { Result } from '@modules/results/entities/result.entity';
 
 @Entity({ name: 'Exam' })
 export class Exam {
@@ -18,12 +25,13 @@ export class Exam {
   TimeLimit: number; // phút
 
   @Column({ type: 'json' })
-  ExamStructure: any; // Có thể định nghĩa interface riêng
+  ExamStructure: any;
 
   @Column({ length: 50 })
   SubjectID: string;
 
   @ManyToOne(() => Subject, { onDelete: 'NO ACTION' })
+  @JoinColumn({ name: 'SubjectID' })
   Subject: Subject;
 
   @OneToMany(() => ExamDetail, (detail) => detail.Exam)

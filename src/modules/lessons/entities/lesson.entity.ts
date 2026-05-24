@@ -1,6 +1,6 @@
 import { Entity, Column, ManyToOne, OneToMany, PrimaryColumn } from 'typeorm';
-import { Chapter } from './chapter.entity';
-import { Skill } from './skill.entity';
+import { Chapter } from '@modules/chapters/entities/chapter.entity';
+import { Skill } from '@modules/skills/entities/skill.entity';
 
 @Entity({ name: 'Lesson' })
 export class Lesson {
@@ -13,7 +13,9 @@ export class Lesson {
   @Column({ length: 50 })
   ChapterID: string;
 
-  @ManyToOne(() => Chapter, (chapter) => chapter.lessons, { onDelete: 'NO ACTION' })
+  @ManyToOne(() => Chapter, (chapter) => chapter.lessons, {
+    onDelete: 'NO ACTION',
+  })
   Chapter: Chapter;
 
   @OneToMany(() => Skill, (skill) => skill.Lesson)

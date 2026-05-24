@@ -1,5 +1,5 @@
 import { Entity, Column, OneToMany, PrimaryColumn } from 'typeorm';
-import { Chapter } from './chapter.entity';
+import { Chapter } from '@modules/chapters/entities/chapter.entity';
 
 @Entity({ name: 'Subject' })
 export class Subject {

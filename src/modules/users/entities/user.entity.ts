@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
-import { Result } from './result.entity';
+import { Result } from '@modules/results/entities/result.entity';
 
 export enum UserRole {
   HOC_SINH = 'HocSinh',
@@ -17,11 +17,14 @@ export class User {
   @Column({ length: 100, unique: true })
   Email: string;
 
-  @Column({ length: 255 })
+  @Column({ length: 255, select: false })
   Password: string;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.HOC_SINH })
   Role: UserRole;
+
+  @Column({ type: 'text', nullable: true })
+  RefreshToken: string | null;
 
   @Column({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
   DateCreated: Date;

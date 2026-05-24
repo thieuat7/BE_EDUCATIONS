@@ -1,4 +1,12 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateSubjectDto } from './create-subject.dto';
+import { IsString, IsOptional, MaxLength } from 'class-validator';
 
-export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}
+export class UpdateSubjectDto {
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  subjectName?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+}

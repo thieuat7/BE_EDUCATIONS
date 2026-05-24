@@ -1,4 +1,8 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateChapterDto } from './create-chapter.dto';
+import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
 
-export class UpdateChapterDto extends PartialType(CreateChapterDto) {}
+export class UpdateChapterDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Chapter name is required' })
+  @MaxLength(100)
+  chapterName: string;
+}

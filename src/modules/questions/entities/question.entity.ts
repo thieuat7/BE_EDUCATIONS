@@ -1,8 +1,15 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
-import { Skill } from './skill.entity';
-import { AnswerChoice } from './answer-choice.entity';
-import { ExamDetail } from './exam-detail.entity';
-import { ResultDetail } from './result-detail.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+} from 'typeorm';
+import { Skill } from '@modules/skills/entities/skill.entity';
+import { AnswerChoice } from '@modules/exams/entities/answer-choice.entity';
+import { ExamDetail } from '@modules/exams/entities/exam-detail.entity';
+import { ResultDetail } from '@modules/results/entities/result-detail.entity';
 
 export enum Difficulty {
   DE = 'De',
@@ -35,6 +42,7 @@ export class Question {
   SkillID: number;
 
   @ManyToOne(() => Skill, (skill) => skill.questions, { onDelete: 'NO ACTION' })
+  @JoinColumn({ name: 'SkillID' })
   Skill: Skill;
 
   @OneToMany(() => AnswerChoice, (choice) => choice.Question)

@@ -6,10 +6,55 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere } from 'typeorm';
-import { User } from '@modules/users/entities/user.entity';
+import { User, UserRole } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { Role } from '@modules/roles/entities/role.entity';
 import * as bcrypt from 'bcrypt';
+
+type UserInput = Partial<{
+  FullName: string;
+  Email: string;
+  Password: string;
+  Role: UserRole;
+  RefreshToken: string;
+  fullName: string;
+  full_name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  refreshToken: string;
+}>;
+
+function normalizeUserInput(input: UserInput): Partial<User> {
+  const normalizedInput: Partial<User> = {};
+
+  const fullName = input.FullName ?? input.fullName ?? input.full_name;
+  const email = input.Email ?? input.email;
+  const password = input.Password ?? input.password;
+  const role = input.Role ?? input.role;
+  const refreshToken = input.RefreshToken ?? input.refreshToken;
+
+  if (fullName !== undefined) {
+    normalizedInput.FullName = fullName;
+  }
+
+  if (email !== undefined) {
+    normalizedInput.Email = email;
+  }
+
+  if (password !== undefined) {
+    normalizedInput.Password = password;
+  }
+
+  if (role !== undefined) {
+    normalizedInput.Role = role;
+  }
+
+  if (refreshToken !== undefined) {
+    normalizedInput.RefreshToken = refreshToken;
+  }
+
+  return normalizedInput;
+}
 
 @Injectable()
 export class UsersService {
@@ -18,65 +63,53 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(Role)
-    private readonly roleRepository: Repository<Role>,
   ) {}
 
   /**
-   * HÀM TÌM KIẾM TỔNG HỢP (THAY THẾ CHO 7 HÀM CŨ)
-   * Giúp lấy User kèm theo Password hoặc Roles một cách linh hoạt
+   * HÀM TÌM KIẾM TỔNG HỢP
    */
   async findOne(
     where: FindOptionsWhere<User>,
-    options: { includePassword?: boolean; includeRoles?: boolean } = {},
+    options: { includePassword?: boolean } = {},
   ): Promise<User | null> {
     const query = this.userRepository.createQueryBuilder('user');
 
     query.where(where);
 
-    // Lấy thêm các trường nhạy cảm bị ẩn (password, refreshToken)
+    // Lấy thêm Password nếu cần thiết
     if (options.includePassword) {
-      query.addSelect(['user.password', 'user.currentHashedRefreshToken']);
-    }
-
-    // Join lấy thêm Roles
-    if (options.includeRoles) {
-      query.leftJoinAndSelect('user.roles', 'role');
+      query.addSelect('user.Password');
     }
 
     return await query.getOne();
   }
 
-  // --- Các hàm tiện ích giúp code ở các tầng khác ngắn gọn hơn ---
+  // --- Các hàm tiện ích ---
 
-  async findById(id: number, includeRoles = false) {
-    return this.findOne({ id }, { includeRoles });
+  async findById(id: number) {
+    return this.findOne({ UserID: id });
   }
 
-  async findByEmail(email: string, includeRoles = false) {
-    return this.findOne({ email }, { includeRoles });
-  }
-
-  async findByPublicId(publicId: string, includeRoles = false) {
-    return this.findOne({ publicId }, { includeRoles });
+  async findByEmail(email: string) {
+    return this.findOne({ Email: email });
   }
 
   // --- Logic nghiệp vụ chính ---
 
   /**
-   * Tạo người dùng mới và gán role mặc định
+   * Tạo người dùng mới
    */
-  async create(userData: Partial<User>): Promise<User> {
-    // 1. Tìm role mặc định là 'user'
-    const defaultRole = await this.roleRepository.findOne({
-      where: { name: 'user' },
-    });
+  async create(userData: UserInput): Promise<User> {
+    const normalizedUserData = normalizeUserInput(userData);
 
-    // 2. Tạo instance user và gán role ngay từ đầu
-    const newUser = this.userRepository.create({
-      ...userData,
-      roles: defaultRole ? [defaultRole] : [],
-    });
+    if (normalizedUserData.Password) {
+      normalizedUserData.Password = await bcrypt.hash(
+        normalizedUserData.Password,
+        10,
+      );
+    }
+
+    const newUser = this.userRepository.create(normalizedUserData);
 
     return await this.userRepository.save(newUser);
   }
@@ -87,55 +120,49 @@ export class UsersService {
   async update(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.findById(id);
     if (!user) {
-      throw new NotFoundException(`Không tìm thấy người dùng với id=${id}`);
+      throw new NotFoundException(`Không tìm thấy người dùng với ID = ${id}`);
     }
 
-    // Kiểm tra trùng email
-    if (updateUserDto.email && updateUserDto.email !== user.email) {
-      const existingUser = await this.findByEmail(updateUserDto.email);
+    const normalizedUpdate = normalizeUserInput(updateUserDto);
+    const newEmail = normalizedUpdate.Email;
+    const newPassword = normalizedUpdate.Password;
+
+    if (newEmail && newEmail !== user.Email) {
+      const existingUser = await this.findByEmail(newEmail);
       if (existingUser) {
         throw new BadRequestException('Email này đã được sử dụng!');
       }
     }
 
-    // Băm mật khẩu nếu có thay đổi
-    if (updateUserDto.password) {
-      updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+    if (newPassword) {
+      normalizedUpdate.Password = await bcrypt.hash(newPassword, 10);
     }
 
-    // Merge dữ liệu mới vào instance cũ (TypeORM sẽ lo việc mapping camelCase)
-    const updatedUser = this.userRepository.merge(user, updateUserDto);
+    const updatedUser = this.userRepository.merge(user, normalizedUpdate);
     return await this.userRepository.save(updatedUser);
   }
 
   /**
-   * Quản lý Refresh Token
+   * Cập nhật Refresh Token
    */
-  async setCurrentRefreshToken(
-    currentHashedRefreshToken: string | null,
-    userId: number,
+  async updateRefreshToken(
+    id: number,
+    refreshToken: string | null,
   ): Promise<void> {
-    const result = await this.userRepository.update(userId, {
-      currentHashedRefreshToken,
+    await this.userRepository.update(id, {
+      RefreshToken: refreshToken,
     });
-
-    if (result.affected === 0) {
-      throw new NotFoundException(
-        'Không thể cập nhật token: User không tồn tại',
-      );
-    }
   }
-
   /**
-   * Xóa người dùng (Soft Delete)
+   * Xóa người dùng (Hard Delete)
    */
   async remove(id: number): Promise<{ message: string }> {
     const user = await this.findById(id);
     if (!user) {
-      throw new NotFoundException(`Không tìm thấy người dùng với id=${id}`);
+      throw new NotFoundException(`Không tìm thấy người dùng với ID = ${id}`);
     }
 
-    await this.userRepository.softRemove(user);
-    return { message: 'Xóa người dùng thành công (Soft Delete)' };
+    await this.userRepository.remove(user);
+    return { message: 'Xóa người dùng thành công' };
   }
 }

@@ -1,6 +1,6 @@
 import { Entity, Column, ManyToOne, OneToMany, PrimaryColumn } from 'typeorm';
-import { Subject } from './subject.entity';
-import { Lesson } from './lesson.entity';
+import { Subject } from '@modules/subjects/entities/subject.entity';
+import { Lesson } from '@modules/lessons/entities/lesson.entity';
 
 @Entity({ name: 'Chapter' })
 export class Chapter {
@@ -13,7 +13,9 @@ export class Chapter {
   @Column({ length: 50 })
   SubjectID: string;
 
-  @ManyToOne(() => Subject, (subject) => subject.chapters, { onDelete: 'NO ACTION' })
+  @ManyToOne(() => Subject, (subject) => subject.chapters, {
+    onDelete: 'NO ACTION',
+  })
   Subject: Subject;
 
   @OneToMany(() => Lesson, (lesson) => lesson.Chapter)

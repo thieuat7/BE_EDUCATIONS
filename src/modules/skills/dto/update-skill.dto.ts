@@ -1,4 +1,8 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateSkillDto } from './create-skill.dto';
+import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
 
-export class UpdateSkillDto extends PartialType(CreateSkillDto) {}
+export class UpdateSkillDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Skill name is required' })
+  @MaxLength(255)
+  skillName: string;
+}
