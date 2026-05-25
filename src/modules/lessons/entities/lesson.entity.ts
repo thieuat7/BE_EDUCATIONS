@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, PrimaryColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  PrimaryColumn,
+  JoinColumn,
+} from 'typeorm';
 import { Chapter } from '@modules/chapters/entities/chapter.entity';
 import { Skill } from '@modules/skills/entities/skill.entity';
 
@@ -16,6 +23,7 @@ export class Lesson {
   @ManyToOne(() => Chapter, (chapter) => chapter.lessons, {
     onDelete: 'NO ACTION',
   })
+  @JoinColumn({ name: 'ChapterID' })
   Chapter: Chapter;
 
   @OneToMany(() => Skill, (skill) => skill.Lesson)

@@ -27,6 +27,16 @@ type ExamInput = Partial<{
   subjectID: string;
 }>;
 
+type ExamRule = {
+  type: 'chapter' | 'lesson' | 'skill';
+  id: number;
+  count: number;
+  filters?: {
+    difficulty?: any;
+    knowledgeType?: any;
+  };
+};
+
 function normalizeExamInput(input: ExamInput): Partial<Exam> {
   const normalizedInput: Partial<Exam> = {};
   const examName = input.ExamName ?? input.examName;
@@ -52,12 +62,158 @@ export class ExamsService {
     private readonly subjectRepository: Repository<Subject>,
     @InjectRepository(Result)
     private readonly resultRepository: Repository<Result>,
-    // Tiêm DataSource để sử dụng Transaction
     private readonly dataSource: DataSource,
   ) {}
 
+  // =========================================================================
+  // PHẦN 1: CÁC METHOD DÀNH CHO ADMIN
+  // =========================================================================
+
   /**
-   * Tạo đề thi ngẫu nhiên dựa trên cấu trúc (Transaction)
+   * [ADMIN] Thống kê tổng quan hệ thống thi
+   */
+  async getGeneralStatistics() {
+    const totalExams = await this.examRepository.count();
+    const totalResults = await this.resultRepository.count();
+
+    // Tính điểm trung bình của toàn bộ hệ thống
+    const results = await this.resultRepository.find({
+      select: { Score: true },
+    });
+    let averageSystemScore = 0;
+
+    if (results.length > 0) {
+      const scores = results
+        .map((r) => Number(r.Score))
+        .filter((s) => !isNaN(s));
+      averageSystemScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+    }
+
+    return {
+      totalExams,
+      totalSubmissions: totalResults,
+      averageSystemScore: Number(averageSystemScore.toFixed(2)),
+    };
+  }
+
+  /**
+   * [ADMIN] Lấy tất cả bài thi (kể cả nháp, ẩn) kèm số lượng câu hỏi
+   */
+  async findAllForAdmin() {
+    return this.getExamsListWithQuestionCount(true);
+  }
+
+  /**
+   * [ADMIN] Lấy chi tiết đề thi (HIỂN THỊ CẢ ĐÁP ÁN ĐÚNG để Admin sửa)
+   */
+  async getExamDetailForAdmin(id: number) {
+    const exam = await this.examRepository.findOne({
+      where: { ExamID: id },
+      relations: {
+        Subject: true,
+        examDetails: {
+          Question: {
+            answerChoices: true,
+          },
+        },
+      },
+      order: {
+        examDetails: {
+          QuestionOrder: 'ASC',
+        },
+      },
+    });
+
+    if (!exam) {
+      throw new NotFoundException(`Không tìm thấy bài thi với ID = ${id}`);
+    }
+
+    return exam;
+  }
+
+  /**
+   * [ADMIN] Lấy chi tiết Exam
+   */
+  /**
+   * [ADMIN] Lấy chi tiết Exam cấu trúc rút gọn theo yêu cầu Client
+   */
+  /**
+   * [ADMIN] Lấy chi tiết Exam cấu trúc rút gọn theo yêu cầu Client
+   */
+  async findOne(id: number) {
+    // 1. Lấy dữ liệu đầy đủ từ Database
+    const exam = await this.examRepository.findOne({
+      where: { ExamID: id },
+      relations: {
+        Subject: true,
+        examDetails: {
+          Question: {
+            answerChoices: true,
+          },
+        },
+      },
+      order: {
+        examDetails: {
+          QuestionOrder: 'ASC', // Sắp xếp thứ tự câu hỏi tăng dần
+        },
+      },
+    });
+
+    if (!exam) {
+      throw new NotFoundException(`Không tìm thấy bài thi với ID = ${id}`);
+    }
+
+    // Kiểm tra an toàn cho ExamStructure đề phòng trường hợp không phải là Object
+    const rules = Array.isArray(exam.ExamStructure?.rules)
+      ? (exam.ExamStructure.rules as ExamRule[])
+      : [];
+
+    // 2. Định dạng (Map) lại dữ liệu theo đúng cấu trúc mong muốn
+    return {
+      ExamID: exam.ExamID,
+      ExamName: exam.ExamName,
+      TimeLimit: exam.TimeLimit,
+      DateCreated: exam.DateCreated,
+
+      // Định dạng lại thông tin Môn học (kiểm tra an toàn)
+      Subject: exam.Subject
+        ? {
+            SubjectID: exam.Subject.SubjectID,
+            SubjectName: exam.Subject.SubjectName,
+          }
+        : null,
+
+      // Định dạng lại cấu trúc đề thi
+      structure: rules.map((rule) => ({
+        lessonId: rule?.id,
+        knowledgeType: rule?.filters?.knowledgeType,
+        count: rule?.count,
+      })),
+
+      // 💡 Thêm bước lọc (filter) để chắc chắn chỉ xử lý các detail CÓ chứa Question
+      questions: (exam.examDetails || [])
+        .filter((detail) => detail && detail.Question)
+        .map((detail) => {
+          const question = detail.Question;
+
+          return {
+            id: question.QuestionID,
+            content: question.Content,
+            difficulty: question.Difficulty,
+            knowledgeType: question.KnowledgeType,
+
+            // Lọc và định dạng danh sách câu trả lời
+            choices: (question.answerChoices || []).map((choice) => ({
+              id: choice.ChoiceID,
+              content: choice.Content,
+              isCorrect: choice.IsCorrectAnswer,
+            })),
+          };
+        }),
+    };
+  }
+  /**
+   * [ADMIN] Tạo đề thi ngẫu nhiên (Transaction)
    */
   async create(createExamDto: CreateExamDto) {
     const normalizedCreate = normalizeExamInput(createExamDto);
@@ -78,18 +234,14 @@ export class ExamsService {
       );
     }
 
-    // Bắt đầu Transaction
     return await this.dataSource.transaction(async (manager) => {
       const selectedQuestions: Question[] = [];
       const selectedQuestionIds = new Set<number>();
+      const rules = normalizedCreate.ExamStructure.rules as ExamRule[];
 
-      const rules = normalizedCreate.ExamStructure.rules;
-
-      // 1. Lọc và lấy câu hỏi ngẫu nhiên cho từng rule
       for (let i = 0; i < rules.length; i++) {
-        const rule = rules[i];
-
-        // Tạo QueryBuilder để truy vấn câu hỏi
+        const rule: ExamRule = rules[i];
+        const ruleType = rule.type;
         const qb = manager
           .createQueryBuilder(Question, 'question')
           .leftJoin('question.Skill', 'skill')
@@ -99,20 +251,18 @@ export class ExamsService {
             subjectId: subject.SubjectID,
           });
 
-        // Lọc theo loại hình (chương, bài học, kỹ năng)
-        if (rule.type === 'chapter') {
+        if (ruleType === 'chapter') {
           qb.andWhere('chapter.ChapterID = :id', { id: rule.id });
-        } else if (rule.type === 'lesson') {
+        } else if (ruleType === 'lesson') {
           qb.andWhere('lesson.LessonID = :id', { id: rule.id });
-        } else if (rule.type === 'skill') {
+        } else if (ruleType === 'skill') {
           qb.andWhere('skill.SkillID = :id', { id: rule.id });
         } else {
           throw new BadRequestException(
-            `Rule thứ ${i + 1} có loại hình không hợp lệ: ${rule.type}`,
+            `Rule thứ ${i + 1} có loại hình không hợp lệ`,
           );
         }
 
-        // Lọc theo độ khó / loại kiến thức
         if (rule.filters?.difficulty) {
           qb.andWhere('question.Difficulty = :diff', {
             diff: rule.filters.difficulty,
@@ -124,16 +274,13 @@ export class ExamsService {
           });
         }
 
-        // Loại trừ các câu hỏi đã được chọn ở rule trước đó
         if (selectedQuestionIds.size > 0) {
           qb.andWhere('question.QuestionID NOT IN (:...ids)', {
             ids: Array.from(selectedQuestionIds),
           });
         }
 
-        // Sắp xếp ngẫu nhiên và lấy số lượng theo rule (Dùng RAND() cho MySQL)
         qb.orderBy('RAND()').take(rule.count);
-
         const ruleQuestions = await qb.getMany();
 
         if (ruleQuestions.length < rule.count) {
@@ -148,14 +295,11 @@ export class ExamsService {
         });
       }
 
-      // Trộn lẫn lại toàn bộ câu hỏi
       selectedQuestions.sort(() => Math.random() - 0.5);
 
-      // 2. Tạo bản ghi Exam
       const exam = manager.create(Exam, normalizedCreate);
       const savedExam = await manager.save(exam);
 
-      // 3. Tạo các bản ghi ExamDetail bằng Bulk Insert
       const examDetails = selectedQuestions.map((q, index) => {
         return manager.create(ExamDetail, {
           Exam: savedExam,
@@ -166,7 +310,6 @@ export class ExamsService {
       await manager.save(ExamDetail, examDetails);
 
       return {
-        success: true,
         message: 'Tạo đề thi thành công',
         exam: savedExam,
         totalQuestions: selectedQuestions.length,
@@ -175,205 +318,7 @@ export class ExamsService {
   }
 
   /**
-   * Lấy danh sách đề thi
-   */
-  async findAll() {
-    // Bước 1: Lấy danh sách đề thi và môn học, chỉ lấy các cột cần thiết
-    const exams = await this.examRepository.find({
-      relations: { Subject: true },
-      select: {
-        ExamID: true,
-        ExamName: true,
-        TimeLimit: true,
-        DateCreated: true,
-        Subject: {
-          SubjectID: true,
-          SubjectName: true,
-        },
-      },
-      order: { DateCreated: 'DESC' },
-    });
-
-    // Bước 2: Truy vấn đếm số lượng câu hỏi gộp theo từng mã Đề thi (ExamID)
-    // Lưu ý: Chúng ta dùng trực tiếp dataSource đã được khai báo ở trên để gọi Repo
-    const counts = await this.dataSource
-      .getRepository(ExamDetail)
-      .createQueryBuilder('detail')
-      .select('detail.ExamID', 'examId') // Lấy ID của đề thi
-      .addSelect('COUNT(detail.id)', 'count') // Đếm số lượng bản ghi
-      .groupBy('detail.ExamID') // Nhóm lại theo từng đề
-      .getRawMany();
-
-    // Bước 3: Đưa kết quả đếm vào một Map (Từ điển) để ghép nối dữ liệu cực nhanh
-    // Cấu trúc Map sẽ giống như: { 16: 10, 13: 10, 9: 10 } (ExamID: Số lượng câu hỏi)
-    const countMap = new Map<number, number>();
-    counts.forEach((c) => {
-      countMap.set(c.examId, Number(c.count));
-    });
-
-    // Bước 4: Trả về dữ liệu cuối cùng cho Frontend
-    return exams.map((exam) => ({
-      ExamID: exam.ExamID,
-      ExamName: exam.ExamName,
-      TimeLimit: exam.TimeLimit,
-      DateCreated: exam.DateCreated,
-      SubjectID: exam.Subject?.SubjectID,
-      SubjectName: exam.Subject?.SubjectName,
-      TotalQuestions: countMap.get(exam.ExamID) || 0, // Ghép số lượng lấy từ Map
-    }));
-  }
-
-  async findOne(id: number) {
-    const exam = await this.examRepository.findOne({
-      where: { ExamID: id },
-      relations: { Subject: true, examDetails: true, results: true },
-    });
-    if (!exam)
-      throw new NotFoundException(`Không tìm thấy bài thi với ID = ${id}`);
-    return exam;
-  }
-
-  /**
-   * Lấy đề thi để làm bài (Có câu hỏi, lựa chọn nhưng ẩn đáp án đúng)
-   */
-  async getExamForTaking(id: number) {
-    // 1. Tìm đề thi cùng các mối quan hệ cần thiết
-    const exam = await this.examRepository.findOne({
-      where: { ExamID: id },
-      relations: {
-        Subject: true,
-        examDetails: {
-          Question: {
-            answerChoices: true,
-          },
-        },
-      },
-      // 💡 CẢI TIẾN: Sắp xếp ngay tại Database thay vì dùng .sort() ở dưới
-      order: {
-        examDetails: {
-          QuestionOrder: 'ASC',
-        },
-      },
-    });
-
-    if (!exam) {
-      throw new NotFoundException(`Không tìm thấy bài thi với ID = ${id}`);
-    }
-
-    // 2. Chuyển đổi dữ liệu (Mapping)
-    const questionsList = exam.examDetails.map((detail) => {
-      const { Question } = detail;
-      return {
-        id: Question.QuestionID,
-        order: detail.QuestionOrder,
-        content: Question.Content,
-        choices: Question.answerChoices.map((choice) => ({
-          id: choice.ChoiceID,
-          content: choice.Content,
-          // Tuyệt đối không bao gồm 'IsCorrectAnswer' ở đây
-        })),
-      };
-    });
-
-    // 3. Trả về cấu trúc dữ liệu tinh gọn cho học sinh
-    return {
-      exam: {
-        id: exam.ExamID,
-        name: exam.ExamName,
-        timeLimit: exam.TimeLimit,
-        subject: exam.Subject.SubjectName,
-        questions: questionsList,
-      },
-    };
-  }
-
-  /**
-   * Nộp bài thi, chấm điểm và lưu kết quả (Transaction)
-   */
-  async submitExam(
-    userId: number,
-    examId: number,
-    answers: Record<number, number>,
-    timeTaken: number,
-  ) {
-    return await this.dataSource.transaction(async (manager) => {
-      const user = await manager.findOne(User, { where: { UserID: userId } });
-      const exam = await manager.findOne(Exam, { where: { ExamID: examId } });
-
-      if (!user) throw new NotFoundException('Không tìm thấy người dùng');
-      if (!exam) throw new NotFoundException('Không tìm thấy bài thi');
-
-      // 💡 ĐÃ SỬA LỖI 1: Đổi ['Question'] thành { Question: true }
-      const examDetails = await manager.find(ExamDetail, {
-        where: { Exam: { ExamID: examId } },
-        relations: { Question: true },
-      });
-
-      const totalQuestions = examDetails.length;
-      let correctCount = 0;
-
-      const result = manager.create(Result, {
-        User: user,
-        Exam: exam,
-        TimeTaken: timeTaken,
-        Score: 0,
-      });
-      const savedResult = await manager.save(Result, result);
-
-      // 💡 ĐÃ SỬA LỖI 4 & 5: Khai báo rõ kiểu dữ liệu cho mảng ResultDetail[]
-      const resultDetailsToSave: ResultDetail[] = [];
-
-      for (const detail of examDetails) {
-        const questionId = detail.Question.QuestionID;
-        const selectedChoiceId = answers[questionId];
-        let isCorrect = false;
-
-        // 💡 GIẢI PHÁP: Sử dụng undefined thay vì null
-        let choiceObj: AnswerChoice | undefined = undefined;
-
-        if (selectedChoiceId) {
-          // Dùng biến tạm để TypeScript tự động hiểu kiểu dữ liệu
-          const foundChoice = await manager.findOne(AnswerChoice, {
-            where: { ChoiceID: selectedChoiceId },
-          });
-          if (foundChoice) {
-            choiceObj = foundChoice;
-            isCorrect = foundChoice.IsCorrectAnswer; // Hoặc foundChoice.isCorrectAnswer tùy thuộc vào AnswerChoice Entity
-            if (isCorrect) correctCount++;
-          }
-        }
-
-        resultDetailsToSave.push(
-          manager.create(ResultDetail, {
-            Result: savedResult, // Khớp với @ManyToOne() Result: Result;
-            Question: detail.Question, // Khớp với @ManyToOne() Question: Question;
-            SelectedChoice: choiceObj, // Truyền undefined nếu không có
-            IsCorrect: selectedChoiceId ? isCorrect : undefined, // Truyền undefined nếu không có
-          }),
-        );
-      }
-
-      await manager.save(ResultDetail, resultDetailsToSave);
-
-      const score =
-        totalQuestions > 0 ? (correctCount / totalQuestions) * 10 : 0;
-      savedResult.Score = Number(score.toFixed(2));
-      await manager.save(Result, savedResult);
-
-      return {
-        success: true,
-        result: {
-          id: savedResult.ResultID,
-          score: savedResult.Score,
-          correctCount,
-          totalQuestions,
-          timeSpent: timeTaken,
-        },
-      };
-    });
-  }
-  /**
-   * Thống kê kết quả bài thi
+   * [ADMIN] Thống kê của 1 bài thi
    */
   async getExamStatistics(examId: number) {
     const exam = await this.findOne(examId);
@@ -409,8 +354,11 @@ export class ExamsService {
     };
   }
 
+  /**
+   * [ADMIN] Cập nhật đề thi
+   */
   async update(id: number, updateExamDto: UpdateExamDto) {
-    const exam = await this.findOne(id);
+    const exam = await this.getExamEntityById(id);
     const normalizedUpdate = normalizeExamInput(updateExamDto);
 
     if (normalizedUpdate.SubjectID) {
@@ -424,9 +372,236 @@ export class ExamsService {
     return await this.examRepository.save(updatedExam);
   }
 
+  /**
+   * [ADMIN] Xóa đề thi
+   */
   async remove(id: number) {
-    const exam = await this.findOne(id);
+    const exam = await this.getExamEntityById(id);
     await this.examRepository.remove(exam);
     return { success: true, message: 'Xóa bài thi thành công' };
+  }
+
+  // =========================================================================
+  // PHẦN 2: CÁC METHOD DÀNH CHO USER
+  // =========================================================================
+
+  /**
+   * [USER] Lấy danh sách đề thi
+   */
+  async findAvailableExams() {
+    return this.getExamsListWithQuestionCount(false);
+  }
+
+  /**
+   * [USER] Lấy đề thi để làm bài (Ẩn đáp án đúng)
+   */
+  async getExamForTaking(id: number) {
+    const exam = await this.examRepository.findOne({
+      where: { ExamID: id },
+      relations: {
+        Subject: true,
+        examDetails: {
+          Question: {
+            answerChoices: true,
+          },
+        },
+      },
+      order: {
+        examDetails: {
+          QuestionOrder: 'ASC',
+        },
+      },
+    });
+
+    if (!exam) {
+      throw new NotFoundException(`Không tìm thấy bài thi với ID = ${id}`);
+    }
+
+    const questionsList = exam.examDetails.map((detail) => {
+      const { Question } = detail;
+      return {
+        id: Question.QuestionID,
+        order: detail.QuestionOrder,
+        content: Question.Content,
+        choices: Question.answerChoices.map((choice) => ({
+          id: choice.ChoiceID,
+          content: choice.Content,
+          // Tuyệt đối không trả về isCorrectAnswer
+        })),
+      };
+    });
+
+    return {
+      exam: {
+        id: exam.ExamID,
+        name: exam.ExamName,
+        timeLimit: exam.TimeLimit,
+        subject: exam.Subject.SubjectName,
+        questions: questionsList,
+      },
+    };
+  }
+
+  /**
+   * [USER] Nộp bài thi
+   */
+  async submitExam(
+    userId: number,
+    examId: number,
+    answers: Record<number, number>,
+    timeTaken: number,
+  ) {
+    return await this.dataSource.transaction(async (manager) => {
+      const user = await manager.findOne(User, { where: { UserID: userId } });
+      const exam = await manager.findOne(Exam, { where: { ExamID: examId } });
+
+      if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+      if (!exam) throw new NotFoundException('Không tìm thấy bài thi');
+
+      const examDetails = await manager.find(ExamDetail, {
+        where: { Exam: { ExamID: examId } },
+        relations: { Question: true },
+      });
+
+      const totalQuestions = examDetails.length;
+      let correctCount = 0;
+
+      const result = manager.create(Result, {
+        User: user,
+        Exam: exam,
+        TimeTaken: timeTaken,
+        Score: 0,
+      });
+      const savedResult = await manager.save(Result, result);
+
+      const resultDetailsToSave: ResultDetail[] = [];
+
+      for (const detail of examDetails) {
+        const questionId = detail.Question.QuestionID;
+        const selectedChoiceId = answers[questionId];
+        let isCorrect = false;
+        let choiceObj: AnswerChoice | undefined = undefined;
+
+        if (selectedChoiceId) {
+          const foundChoice = await manager.findOne(AnswerChoice, {
+            where: { ChoiceID: selectedChoiceId },
+          });
+          if (foundChoice) {
+            choiceObj = foundChoice;
+            isCorrect = foundChoice.IsCorrectAnswer;
+            if (isCorrect) correctCount++;
+          }
+        }
+
+        resultDetailsToSave.push(
+          manager.create(ResultDetail, {
+            Result: savedResult,
+            Question: detail.Question,
+            SelectedChoice: choiceObj,
+            IsCorrect: selectedChoiceId ? isCorrect : undefined,
+          }),
+        );
+      }
+
+      await manager.save(ResultDetail, resultDetailsToSave);
+
+      const score =
+        totalQuestions > 0 ? (correctCount / totalQuestions) * 10 : 0;
+      savedResult.Score = Number(score.toFixed(2));
+      await manager.save(Result, savedResult);
+
+      return {
+        success: true,
+        result: {
+          id: savedResult.ResultID,
+          score: savedResult.Score,
+          correctCount,
+          totalQuestions,
+          timeSpent: timeTaken,
+        },
+      };
+    });
+  }
+
+  // =========================================================================
+  // PHẦN 3: CÁC METHOD TIỆN ÍCH DÙNG CHUNG
+  // =========================================================================
+
+  /**
+   * Helper method: Lấy danh sách Exam kèm theo việc đếm số câu hỏi
+   * Được dùng chung bởi cả findAvailableExams và findAllForAdmin
+   */
+  /**
+   * Helper method: Lấy danh sách Exam kèm theo việc đếm số câu hỏi
+   * Được dùng chung bởi cả findAvailableExams và findAllForAdmin
+   * @param isAdmin Quyết định xem có trả về các trường quản trị (DateCreated, ExamStructure...) hay không
+   */
+  private async getExamsListWithQuestionCount(isAdmin: boolean = false) {
+    const exams = await this.examRepository.find({
+      relations: { Subject: true },
+      select: {
+        ExamID: true,
+        ExamName: true,
+        TimeLimit: true,
+        DateCreated: true, // Lấy ra để dành cho Admin
+        ExamStructure: true, // Lấy ra cấu trúc đề dành riêng cho Admin
+        Subject: {
+          SubjectID: true,
+          SubjectName: true,
+        },
+      },
+      order: { DateCreated: 'DESC' },
+    });
+
+    const counts: Array<{ examId: string | number; count: string | number }> =
+      await this.dataSource
+        .getRepository(ExamDetail)
+        .createQueryBuilder('detail')
+        .select('detail.ExamID', 'examId')
+        .addSelect('COUNT(detail.id)', 'count')
+        .groupBy('detail.ExamID')
+        .getRawMany();
+
+    const countMap = new Map<number, number>();
+    counts.forEach((c) => {
+      countMap.set(Number(c.examId), Number(c.count));
+    });
+
+    // Bắt đầu phân tách dữ liệu trả về dựa trên role
+    return exams.map((exam) => {
+      // 1. Data cơ bản an toàn (Ai cũng được xem)
+      const baseData = {
+        ExamID: exam.ExamID,
+        ExamName: exam.ExamName,
+        TimeLimit: exam.TimeLimit,
+        SubjectID: exam.Subject?.SubjectID,
+        SubjectName: exam.Subject?.SubjectName,
+        TotalQuestions: countMap.get(exam.ExamID) || 0,
+      };
+
+      // 2. Trả về cho ADMIN (Nhồi thêm các trường hậu trường)
+      if (isAdmin) {
+        return {
+          ...baseData,
+          DateCreated: exam.DateCreated,
+          ExamStructure: exam.ExamStructure, // Giúp Admin biết đề này sinh ra theo rules nào
+        };
+      }
+
+      // 3. Trả về cho USER
+      return baseData;
+    });
+  }
+
+  private async getExamEntityById(id: number) {
+    const exam = await this.examRepository.findOne({
+      where: { ExamID: id },
+    });
+
+    if (!exam) {
+      throw new NotFoundException(`Không tìm thấy bài thi với ID = ${id}`);
+    }
+
+    return exam;
   }
 }

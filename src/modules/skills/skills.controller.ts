@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   NotFoundException,
   ParseIntPipe,
 } from '@nestjs/common';
@@ -13,11 +14,15 @@ import { SkillsService } from './skills.service';
 import { UseAuth } from '@common/decorators/use-auth.decorator';
 import { CreateSkillDto } from './dto/create-skill.dto';
 import { UpdateSkillDto } from './dto/update-skill.dto';
+import { QuestionsService } from '../questions/questions.service';
 
 @UseAuth()
 @Controller('skills')
 export class SkillsController {
-  constructor(private readonly skillsService: SkillsService) {}
+  constructor(
+    private readonly skillsService: SkillsService,
+    private readonly questionsService: QuestionsService,
+  ) {}
 
   @Get()
   async listSkills() {
@@ -96,5 +101,17 @@ export class SkillsController {
     if (!result) throw new NotFoundException('Kỹ năng không tồn tại');
 
     return { success: true, message: 'Xóa kỹ năng thành công' };
+  }
+
+  @Get(':id/questions')
+  async getBySkill(
+    @Param('skillId', ParseIntPipe) skillId: number,
+    @Query('difficulty') difficulty?: string,
+  ) {
+    const questions = await this.questionsService.findBySkill(
+      skillId,
+      difficulty,
+    );
+    return { success: true, questions, total: questions.length };
   }
 }

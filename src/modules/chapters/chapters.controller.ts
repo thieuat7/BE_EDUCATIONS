@@ -34,7 +34,7 @@ export class ChaptersController {
       subjectId: chapter.SubjectID,
     }));
 
-    return { success: true, chapters: formatted, total: formatted.length };
+    return { chapters: formatted, total: formatted.length };
   }
 
   @Get('summary')

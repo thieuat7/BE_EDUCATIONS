@@ -32,7 +32,6 @@ export interface SkillAnalysisResult {
   priorityScore: number;
 }
 
-// Interface định nghĩa dữ liệu đầu vào (Bạn có thể điều chỉnh tùy theo TypeORM trả về)
 export interface RawSkillStats {
   skill_id: number;
   skillName: string;
@@ -47,7 +46,6 @@ export interface RawSkillStats {
 export class KnowledgeAnalyzerService {
   private readonly logger = new Logger(KnowledgeAnalyzerService.name);
 
-  // Cấu hình các ngưỡng (Thresholds) mặc định
   private readonly minAttemptsThreshold = 3;
   private readonly criticalWeaknessRate = 60.0;
   private readonly needsImprovementRate = 30.0;
@@ -57,11 +55,7 @@ export class KnowledgeAnalyzerService {
 
   constructor(private configService: ConfigService) {}
 
-  /**
-   * Hàm chính: Thực hiện phân tích và trả về cấu trúc dữ liệu hoàn chỉnh.
-   */
   public async analyze(rawStatsData: RawSkillStats[]): Promise<any> {
-    // Khởi tạo trạng thái cục bộ để đảm bảo an toàn luồng (Thread-safe) trong NestJS
     const state = {
       analyzedSkills: [] as SkillAnalysisResult[],
       criticalWeaknesses: [] as SkillAnalysisResult[],
@@ -71,16 +65,11 @@ export class KnowledgeAnalyzerService {
       insufficientData: [] as SkillAnalysisResult[],
     };
 
-    // Bước 1: Xử lý và phân loại
     this.processAndClassifySkills(rawStatsData, state);
-
-    // Bước 2: Tính thống kê tổng quan
     const overallStats = this.calculateOverallStats(
       state.analyzedSkills,
       state,
     );
-
-    // Bước 3: Tạo insight và gọi AI
     const { insights, aiTextResult } = await this.generateInsights(
       state,
       overallStats,
@@ -93,30 +82,21 @@ export class KnowledgeAnalyzerService {
         criticalWeaknesses: state.criticalWeaknesses,
         needsImprovement: state.needsImprovement,
         strengths: state.strengths,
-        insufficientData: state.insufficientData, // Trả về để UI hiển thị nhắc nhở làm thêm
+        insufficientData: state.insufficientData,
         allSkillSummary: state.analyzedSkills,
       },
       aiTextResult,
     };
   }
 
-  // --- CÁC HÀM LOGIC CỐT LÕI (CORE LOGIC) ---
-
   private calculatePriorityScore(
     wrongRate: number,
     total: number,
     category: SkillCategory,
   ): number {
-    /* Tính điểm ưu tiên dựa trên Tỷ lệ sai + Logarit số câu + Hệ số nghiêm trọng. */
     const severityMultiplier = category === SkillCategory.CRITICAL ? 1.5 : 1.0;
-
-    // Giới hạn trần (Capping) cho total là 50.
     const cappedTotal = Math.min(total, 50);
-
-    // Công thức: wrong_rate * log2(capped_total + 2) * severity_multiplier
     const score = wrongRate * Math.log2(cappedTotal + 2) * severityMultiplier;
-
-    // Làm tròn 2 chữ số thập phân
     return Math.round(score * 100) / 100;
   }
 
@@ -137,7 +117,6 @@ export class KnowledgeAnalyzerService {
       const accuracyRate = (totalCorrect / total) * 100;
       const confidence = this.getConfidenceLevel(total);
 
-      // 1. Phân loại Category
       let category = SkillCategory.INSUFFICIENT;
       if (total >= this.minAttemptsThreshold) {
         if (wrongRate >= this.criticalWeaknessRate) {
@@ -151,7 +130,6 @@ export class KnowledgeAnalyzerService {
         }
       }
 
-      // 2. Tính Priority Score
       const priorityScore = this.calculatePriorityScore(
         wrongRate,
         total,
@@ -173,7 +151,6 @@ export class KnowledgeAnalyzerService {
 
       state.analyzedSkills.push(skillResult);
 
-      // 3. Phân vào các mảng con
       if (category === SkillCategory.CRITICAL)
         state.criticalWeaknesses.push(skillResult);
       else if (category === SkillCategory.IMPROVE)
@@ -185,19 +162,13 @@ export class KnowledgeAnalyzerService {
       else state.insufficientData.push(skillResult);
     }
 
-    // 4. Sắp xếp (Sorting Strategy)
-    // Điểm yếu: Ưu tiên điểm số Priority Score cao nhất
     state.criticalWeaknesses.sort((a, b) => b.priorityScore - a.priorityScore);
     state.needsImprovement.sort((a, b) => b.priorityScore - a.priorityScore);
-
-    // Điểm mạnh: Ưu tiên Độ chính xác trước, sau đó đến Số lượng câu đã làm
     state.strengths.sort((a, b) => {
       if (b.accuracyRate !== a.accuracyRate)
         return b.accuracyRate - a.accuracyRate;
       return b.totalAnswered - a.totalAnswered;
     });
-
-    // List tổng: Sắp xếp theo độ chính xác tăng dần (Yếu nhất lên đầu)
     state.analyzedSkills.sort((a, b) => a.accuracyRate - b.accuracyRate);
   }
 
@@ -205,7 +176,6 @@ export class KnowledgeAnalyzerService {
     state: any,
     stats: any,
   ): Promise<{ insights: any[]; aiTextResult: string | null }> {
-    // ✅ Đã sửa: thêm type annotation cho mảng insights
     const insights: Array<{ type: string; message: string; data?: any }> = [];
 
     // Insight 1: Tổng quan
@@ -215,7 +185,7 @@ export class KnowledgeAnalyzerService {
       data: stats,
     });
 
-    // Insight 2: Critical (Lấy top 1)
+    // Insight 2: Critical
     if (state.criticalWeaknesses.length > 0) {
       const topWeak = state.criticalWeaknesses[0];
       insights.push({
@@ -225,7 +195,7 @@ export class KnowledgeAnalyzerService {
       });
     }
 
-    // Insight 3: Strength (Lấy top 1)
+    // Insight 3: Strength
     if (state.strengths.length > 0) {
       const topStrength = state.strengths[0];
       insights.push({
@@ -235,12 +205,13 @@ export class KnowledgeAnalyzerService {
       });
     }
 
-    // Gọi AI Rewrite
     let aiTextResult: string | null = null;
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
 
-    if (apiKey) {
-      // ✅ Đã sửa: thêm type string[] cho mảng details
+    // 💡 TẠM TẮT AI: Gán biến này bằng true nếu muốn bật lại AI
+    const isAiEnabled = false;
+
+    if (isAiEnabled && apiKey) {
       const details: string[] = [];
       if (state.criticalWeaknesses.length > 0) {
         details.push('\nTop 3 điểm yếu cần ưu tiên xử lý:');
@@ -251,7 +222,6 @@ export class KnowledgeAnalyzerService {
         }
       }
 
-      // ✅ insights đã có type, nên item.message tồn tại
       const rawMessages = insights.map((item) => item.message);
       if (details.length > 0) {
         rawMessages.push(details.join('\n'));
@@ -265,7 +235,11 @@ export class KnowledgeAnalyzerService {
         aiTextResult = aiOutputList[0];
       }
     } else {
-      this.logger.warn('⚠️ CHƯA CÓ API KEY GEMINI. BỎ QUA BƯỚC AI REWRITE.');
+      // Khi AI tắt, tạo một thông báo mặc định dựa trên dữ liệu hệ thống
+      this.logger.log('ℹ️ AI Rewrite đang bị tắt. Sử dụng văn bản mặc định.');
+      const rawMessages = insights.map((item) => item.message);
+      aiTextResult =
+        'Hệ thống AI hiện đang tạm tắt. \n' + rawMessages.join('\n');
     }
 
     return { insights, aiTextResult };
@@ -295,17 +269,14 @@ QUY TẮC BẮT BUỘC:
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      // Sử dụng model flash chuẩn (như trong Python)
       const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
       const response = await model.generateContent(prompt);
       return [response.response.text()];
     } catch (error) {
       this.logger.error(`⚠️ AI Error: ${error.message}`);
-      return [rawMessages.join('\n')]; // Fallback an toàn
+      return [rawMessages.join('\n')];
     }
   }
-
-  // --- HÀM PHỤ TRỢ ---
 
   private calculateOverallStats(
     analyzedSkills: SkillAnalysisResult[],

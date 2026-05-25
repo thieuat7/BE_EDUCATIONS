@@ -8,6 +8,7 @@ import { Question } from '@modules/questions/entities/question.entity';
 import { AnswerChoice } from '@modules/exams/entities/answer-choice.entity';
 import { User } from '@modules/users/entities/user.entity';
 import { AnalyticsEngineService } from '@modules/ai-services/analytics-engine.service';
+import { KnowledgeAnalyzerService } from '@modules/ai-services/knowledge-analyzer.service';
 
 @Injectable()
 export class ResultsService {
@@ -22,6 +23,7 @@ export class ResultsService {
     @InjectRepository(User) private userRepo: Repository<User>,
     private dataSource: DataSource,
     private analyticsEngine: AnalyticsEngineService,
+    private knowledgeAnalyzerService: KnowledgeAnalyzerService,
   ) {}
 
   // 💡 Lấy danh sách kết quả chung
@@ -81,7 +83,7 @@ export class ResultsService {
         : null,
     }));
   }
-  // 💡 Phân tích điểm yếu kiến thức (Dùng QueryBuilder)
+  //  Phân tích điểm yếu kiến thức (Dùng QueryBuilder)
   async analyzeKnowledgeWeakness(
     userId: number,
     knowledgeType: string,
@@ -108,7 +110,7 @@ export class ResultsService {
       .addOrderBy('result.DateTaken', 'DESC')
       .getMany();
 
-    const uniqueQuestionsMap = new Map<number, ResultDetail>();
+    const uniqueQuestionsMap = new Map<number, any>(); // Điều chỉnh type ResultDetail nếu cần
     latestDetails.forEach((detail) => {
       if (!uniqueQuestionsMap.has(detail.QuestionID)) {
         uniqueQuestionsMap.set(detail.QuestionID, detail);
@@ -116,8 +118,7 @@ export class ResultsService {
     });
     const distinctDetails = Array.from(uniqueQuestionsMap.values());
 
-    const skillStats = {};
-    // 💡 ĐÃ SỬA: Định nghĩa rõ ràng đây là mảng các số nguyên (number)
+    const skillStats: Record<number, any> = {};
     const wrongQuestionIds: number[] = [];
 
     distinctDetails.forEach((detail) => {
@@ -141,10 +142,12 @@ export class ResultsService {
       }
     });
 
-    const aiAnalysisResults = {};
-    const aiTextResult = 'Đang phân tích...';
+    const rawStatsArray = Object.values(skillStats);
 
-    // 💡 ĐÃ SỬA: Định nghĩa rõ ràng đây là mảng chứa các đối tượng bất kỳ (any)
+    const analysisResult = await this.knowledgeAnalyzerService.analyze(
+      rawStatsArray as any[],
+    );
+
     let finalWrongQuestions: any[] = [];
     if (wrongQuestionIds.length > 0) {
       const wrongQuestionsData = await this.questionRepo.find({
@@ -177,8 +180,9 @@ export class ResultsService {
       userId,
       knowledgeType,
       subjectId: monhocId || 'all',
-      aiAnalysis: aiAnalysisResults,
-      aiTextResult: aiTextResult,
+      // 💡 Gắn kết quả từ AI Service trả về vào output API
+      aiAnalysis: analysisResult.aiAnalysis,
+      aiTextResult: analysisResult.aiTextResult,
       wrongQuestions: finalWrongQuestions,
     };
   }

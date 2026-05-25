@@ -74,7 +74,7 @@ export class ResultsController {
       knowledgeType,
       subjectId,
     );
-    return { success: true, analysis };
+    return analysis;
   }
 
   @Get('user/:userId')
@@ -97,7 +97,7 @@ export class ResultsController {
     const data = await this.resultsService.getResultAnalysis(resultId);
     if (!data) throw new NotFoundException('Không tìm thấy bài làm');
 
-    return { success: true, summary: data.summary };
+    return data;
   }
 
   @Get('exam/:examId')

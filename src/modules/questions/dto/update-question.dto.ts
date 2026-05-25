@@ -1,4 +1,29 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateQuestionDto } from './create-question.dto';
+import {
+  IsString,
+  IsEnum,
+  IsArray,
+  ValidateNested,
+  IsOptional,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { Difficulty, KnowledgeType } from '../entities/question.entity';
+import { ChoiceDto } from './choice-question.dto';
+export class UpdateQuestionDto {
+  @IsOptional()
+  @IsString()
+  content?: string;
 
-export class UpdateQuestionDto extends PartialType(CreateQuestionDto) {}
+  @IsOptional()
+  @IsEnum(Difficulty)
+  difficulty?: Difficulty;
+
+  @IsOptional()
+  @IsEnum(KnowledgeType)
+  knowledgeType?: KnowledgeType;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChoiceDto)
+  choices?: ChoiceDto[];
+}

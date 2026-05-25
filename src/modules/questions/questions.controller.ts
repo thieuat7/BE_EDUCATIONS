@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseIntPipe,
+  DefaultValuePipe,
+} from '@nestjs/common';
 import { QuestionsService } from './questions.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
@@ -7,28 +18,65 @@ import { UpdateQuestionDto } from './dto/update-question.dto';
 export class QuestionsController {
   constructor(private readonly questionsService: QuestionsService) {}
 
+  @Get()
+  async findAll(
+    // 💡 Chèn DefaultValuePipe vào trước ParseIntPipe
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    const result = await this.questionsService.findAll(page, limit);
+    return result;
+  }
   @Post()
-  create(@Body() createQuestionDto: CreateQuestionDto) {
-    return this.questionsService.create(createQuestionDto);
+  async create(@Body() createQuestionDto: CreateQuestionDto) {
+    const question = await this.questionsService.create(createQuestionDto);
+    return {
+      message: 'Tạo câu hỏi thành công',
+      question: {
+        id: question.QuestionID,
+        content: question.Content,
+      },
+    };
   }
 
-  @Get()
-  findAll() {
-    return this.questionsService.findAll();
+  // Route tĩnh phải đặt TRƯỚC route :id
+  @Get('search')
+  async search(
+    @Query('keyword') keyword: string,
+    @Query('skillId') skillId?: string,
+  ) {
+    const questions = await this.questionsService.search(
+      keyword || '',
+      skillId ? parseInt(skillId) : undefined,
+    );
+    return { questions, total: questions.length };
+  }
+
+  @Get('statistics')
+  async getStatistics(@Query('skillId') skillId?: string) {
+    const statistics = await this.questionsService.getStatistics(
+      skillId ? parseInt(skillId) : undefined,
+    );
+    return statistics;
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.questionsService.findOne(+id);
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    const question = await this.questionsService.findOne(id);
+    return question;
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateQuestionDto: UpdateQuestionDto) {
-    return this.questionsService.update(+id, updateQuestionDto);
+  @Put(':id')
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateQuestionDto: UpdateQuestionDto,
+  ) {
+    const question = await this.questionsService.update(id, updateQuestionDto);
+    return question;
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.questionsService.remove(+id);
+  async remove(@Param('id', ParseIntPipe) id: number) {
+    return await this.questionsService.remove(id);
   }
 }
