@@ -45,7 +45,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Lấy thông tin người dùng hiện tại' })
   @UseAuth()
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
   getMe(@GetCurrentUser('userId') userId: number) {
     return this.authService.getMe(userId);
   }
@@ -71,6 +71,7 @@ export class AuthController {
 
   // Đăng xuất
   @UseAuth()
+  @ApiBearerAuth('access-token')
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Đăng xuất' })

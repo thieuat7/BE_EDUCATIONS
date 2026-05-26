@@ -8,48 +8,75 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+} from '@nestjs/swagger';
 import { ExamsService } from './exams.service';
 import { CreateExamDto } from './dto/create-exam.dto';
 import { UpdateExamDto } from './dto/update-exam.dto';
 import { UseAuth } from '@common/decorators/use-auth.decorator';
+
+@ApiTags('Admin - Exams')
+@ApiBearerAuth()
 @Controller('admin/exams')
 @UseAuth('Admin')
 export class AdminExamsController {
   constructor(private readonly examsService: ExamsService) {}
 
-  // 1. API Mới: Lấy thông tin thống kê tổng quan của toàn bộ hệ thống thi
   @Get('statistics/overview')
+  @ApiOperation({ summary: 'Lấy thống kê tổng quan toàn bộ hệ thống thi (Admin)' })
+  @ApiResponse({ status: 200, description: 'Thống kê tổng quan thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
   getGeneralStatistics() {
-    // Cần bổ sung hàm này vào ExamsService
     return this.examsService.getGeneralStatistics();
   }
 
-  // 2. Tạo đề thi
   @Post()
+  @ApiOperation({ summary: 'Tạo đề thi mới (Admin)' })
+  @ApiResponse({ status: 201, description: 'Tạo đề thi thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
   create(@Body() createExamDto: CreateExamDto) {
     return this.examsService.create(createExamDto);
   }
 
-  // 3. Lấy TẤT CẢ danh sách đề thi (Bao gồm cả nháp, đã ẩn)
   @Get()
+  @ApiOperation({ summary: 'Lấy tất cả đề thi bao gồm nháp và đã ẩn (Admin)' })
+  @ApiResponse({ status: 200, description: 'Danh sách đề thi thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
   findAll() {
     return this.examsService.findAllForAdmin();
   }
 
-  // 4. Lấy thống kê của MỘT đề thi cụ thể
   @Get(':id/statistics')
+  @ApiOperation({ summary: 'Lấy thống kê của một đề thi cụ thể (Admin)' })
+  @ApiParam({ name: 'id', description: 'ID của đề thi', type: Number })
+  @ApiResponse({ status: 200, description: 'Thống kê đề thi thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy đề thi' })
   getExamStatistics(@Param('id', ParseIntPipe) id: number) {
     return this.examsService.getExamStatistics(id);
   }
 
-  // 5. Lấy chi tiết đề thi
   @Get(':id')
+  @ApiOperation({ summary: 'Lấy chi tiết một đề thi (Admin)' })
+  @ApiParam({ name: 'id', description: 'ID của đề thi', type: Number })
+  @ApiResponse({ status: 200, description: 'Chi tiết đề thi thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy đề thi' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.examsService.findOne(id);
   }
 
-  // 6. Cập nhật đề thi
   @Patch(':id')
+  @ApiOperation({ summary: 'Cập nhật đề thi (Admin)' })
+  @ApiParam({ name: 'id', description: 'ID của đề thi cần cập nhật', type: Number })
+  @ApiResponse({ status: 200, description: 'Cập nhật đề thi thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy đề thi' })
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateExamDto: UpdateExamDto,
@@ -57,8 +84,12 @@ export class AdminExamsController {
     return this.examsService.update(id, updateExamDto);
   }
 
-  // 7. Xóa đề thi
   @Delete(':id')
+  @ApiOperation({ summary: 'Xóa đề thi (Admin)' })
+  @ApiParam({ name: 'id', description: 'ID của đề thi cần xóa', type: Number })
+  @ApiResponse({ status: 200, description: 'Xóa đề thi thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy đề thi' })
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.examsService.remove(id);
   }
