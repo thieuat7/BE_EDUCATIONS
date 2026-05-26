@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Chapter } from './entities/chapter.entity';
@@ -11,19 +15,34 @@ export class ChaptersService {
     @InjectRepository(Subject) private subjectRepo: Repository<Subject>,
   ) {}
 
+  // Tạo chương mới
   async createChapter(
     chapterId: string,
     chapterName: string,
     subjectId: string,
   ) {
+    // 💡 1. KIỂM TRA TRÙNG LẶP ID:
+    // YÊU CẦU: Thuộc tính 'ChapterID' phải viết y hệt như bạn khai báo trong chapter.entity.ts
+    const existingChapter = await this.chapterRepo.findOne({
+      where: { ChapterID: chapterId },
+    });
+
+    if (existingChapter) {
+      throw new ConflictException(
+        `Mã chương '${chapterId}' đã tồn tại trong hệ thống!`,
+      );
+    }
+
+    // 2. KIỂM TRA MÔN HỌC
     const subject = await this.subjectRepo.findOne({
-      where: { SubjectID: subjectId },
+      where: { SubjectID: subjectId }, // Tương tự, kiểm tra lại tên thuộc tính này
     });
 
     if (!subject) {
       throw new NotFoundException('Môn học không tồn tại');
     }
 
+    // 3. TẠO VÀ LƯU
     const chapter = this.chapterRepo.create({
       ChapterID: chapterId,
       ChapterName: chapterName,
@@ -36,7 +55,6 @@ export class ChaptersService {
   async getChaptersBySubject(subjectId: string) {
     return await this.chapterRepo.find({
       where: { Subject: { SubjectID: subjectId } },
-      // 💡 Đã sửa: Sử dụng object { Subject: true } thay vì mảng ['Subject']
       relations: { Subject: true },
       order: { ChapterID: 'ASC' },
     });

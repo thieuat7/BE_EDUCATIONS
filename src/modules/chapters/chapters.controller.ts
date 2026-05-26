@@ -2,7 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch,
   Delete,
   Param,
   Query,
@@ -40,7 +40,7 @@ export class ChaptersController {
   @Get('summary')
   async listChaptersSummary() {
     const chapters = await this.chaptersService.getAllChaptersWithLessonCount();
-    return { success: true, chapters, total: chapters.length };
+    return { chapters, total: chapters.length };
   }
 
   @Get('detailed')
@@ -67,12 +67,11 @@ export class ChaptersController {
     }
 
     return {
-      success: true,
       chapter: {
         id: chapter.ChapterID,
         name: chapter.ChapterName,
         subject: {
-          id: chapter.Subject?.SubjectID, // Tùy thuộc vào thiết kế Subject entity của bạn
+          id: chapter.Subject?.SubjectID,
           name: chapter.Subject?.SubjectName,
         },
       },
@@ -82,7 +81,6 @@ export class ChaptersController {
   @Post()
   @UseAuth('Admin')
   async createChapter(@Body() createChapterDto: CreateChapterDto) {
-    // DTO đã tự động kiểm tra dữ liệu, chúng ta không cần lệnh if(Thiếu dữ liệu) nữa
     const chapter = await this.chaptersService.createChapter(
       createChapterDto.chapterId,
       createChapterDto.chapterName,
@@ -90,8 +88,7 @@ export class ChaptersController {
     );
 
     return {
-      success: true,
-      message: 'Chapter created successfully',
+      message: 'Tạo chương thành công',
       chapter: {
         id: chapter.ChapterID,
         name: chapter.ChapterName,
@@ -99,7 +96,7 @@ export class ChaptersController {
     };
   }
 
-  @Put(':id')
+  @Patch(':id')
   @UseAuth('Admin')
   async updateChapter(
     @Param('id') id: string,
@@ -109,13 +106,13 @@ export class ChaptersController {
       id,
       updateChapterDto.chapterName,
     );
-    return { success: true, chapter };
+    return { message: 'Cập nhật chương thành công', chapter };
   }
 
   @Delete(':id')
   @UseAuth('Admin')
   async deleteChapter(@Param('id') id: string) {
     await this.chaptersService.deleteChapter(id);
-    return { success: true, message: 'Chapter deleted successfully' };
+    return { message: 'Xóa chương thành công' };
   }
 }

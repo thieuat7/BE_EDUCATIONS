@@ -23,7 +23,7 @@ export class User {
   @Column({ type: 'enum', enum: UserRole, default: UserRole.HOC_SINH })
   Role: UserRole;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'text', nullable: true, select: false })
   RefreshToken: string | null;
 
   @Column({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })

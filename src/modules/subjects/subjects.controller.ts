@@ -2,7 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch,
   Delete,
   Param,
   Body,
@@ -13,7 +13,7 @@ import { UseAuth } from '@common/decorators/use-auth.decorator';
 import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
 
-@Controller('subjects') // 💡 Chuẩn hóa route thành tiếng Anh
+@Controller('subjects')
 export class SubjectsController {
   constructor(private readonly subjectsService: SubjectsService) {}
 
@@ -21,7 +21,6 @@ export class SubjectsController {
   async listSubjects() {
     const subjects = await this.subjectsService.getAllSubjects();
 
-    // Map dữ liệu trả về với các key camelCase chuẩn xác
     const formatted = subjects.map((subject) => ({
       id: subject.SubjectID,
       name: subject.SubjectName,
@@ -36,7 +35,6 @@ export class SubjectsController {
   async listSubjectsSummary() {
     const subjects = await this.subjectsService.getSubjectSummary();
 
-    // Giả định service trả về raw data có kèm count
     const formatted = subjects.map((s) => ({
       id: s.SubjectID || s.id,
       name: s.SubjectName || s.name,
@@ -45,7 +43,7 @@ export class SubjectsController {
       lessonCount: parseInt(s.lessonCount || s.lessoncount || '0', 10),
     }));
 
-    return { success: true, subjects: formatted, total: formatted.length };
+    return { subjects: formatted, total: formatted.length };
   }
 
   @Get(':id')
@@ -73,13 +71,12 @@ export class SubjectsController {
     );
 
     return {
-      success: true,
       message: 'Tạo môn học thành công',
       subject: { id: subject.SubjectID, name: subject.SubjectName },
     };
   }
 
-  @Put(':id')
+  @Patch(':id')
   @UseAuth('Admin') // 💡 Tự động kiểm tra quyền Admin
   async updateSubject(
     @Param('id') id: string,
@@ -91,14 +88,14 @@ export class SubjectsController {
       updateSubjectDto.description,
     );
 
-    return { success: true, subject };
+    return { message: 'Cập nhật môn học thành công', subject };
   }
 
   @Delete(':id')
   @UseAuth('Admin') // 💡 Tự động kiểm tra quyền Admin
   async deleteSubject(@Param('id') id: string) {
     await this.subjectsService.deleteSubject(id);
-    return { success: true, message: 'Xóa môn học thành công' };
+    return { message: 'Xóa môn học thành công' };
   }
 
   @Get(':id/hierarchy')
@@ -106,6 +103,6 @@ export class SubjectsController {
     const hierarchy = await this.subjectsService.getContentHierarchy(id);
     if (!hierarchy) throw new NotFoundException('Môn học không tồn tại');
 
-    return { success: true, hierarchy };
+    return { hierarchy };
   }
 }

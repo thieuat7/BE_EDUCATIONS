@@ -2,7 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch,
   Delete,
   Param,
   Query,
@@ -16,7 +16,7 @@ import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 
 @UseAuth()
-@Controller('lessons') // 💡 Đã đổi từ 'api/baihoc' sang 'lessons'
+@Controller('lessons')
 export class LessonsController {
   constructor(private readonly lessonsService: LessonsService) {}
 
@@ -30,14 +30,13 @@ export class LessonsController {
     const chapterIds = Array.isArray(chapterId) ? chapterId : [chapterId];
     const lessons = await this.lessonsService.getLessonsByChapters(chapterIds);
 
-    // Sử dụng đúng tên thuộc tính trong Lesson Entity
     const formatted = lessons.map((lesson) => ({
       id: lesson.LessonID,
       name: lesson.LessonName,
       chapterId: lesson.ChapterID,
     }));
 
-    return { success: true, lessons: formatted, total: formatted.length };
+    return { lessons: formatted, total: formatted.length };
   }
 
   @Get('summary')
@@ -54,7 +53,6 @@ export class LessonsController {
     }
 
     return {
-      success: true,
       lesson: {
         id: lesson.LessonID,
         name: lesson.LessonName,
@@ -76,13 +74,12 @@ export class LessonsController {
     );
 
     return {
-      success: true,
-      message: 'Lesson created successfully',
+      message: 'Tạo bài học thành công',
       lesson: { id: lesson.LessonID, name: lesson.LessonName },
     };
   }
 
-  @Put(':id')
+  @Patch(':id')
   @UseAuth('Admin')
   async updateLesson(
     @Param('id') id: string,
@@ -92,13 +89,16 @@ export class LessonsController {
       id,
       updateLessonDto.lessonName,
     );
-    return { success: true, lesson };
+    return {
+      message: 'Cập nhật bài học thành công',
+      lesson,
+    };
   }
 
   @Delete(':id')
   @UseAuth('Admin')
   async deleteLesson(@Param('id') id: string) {
     await this.lessonsService.deleteLesson(id);
-    return { success: true, message: 'Lesson deleted successfully' };
+    return { message: 'Xóa bài học thành công' };
   }
 }

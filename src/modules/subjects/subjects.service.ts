@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Subject } from './entities/subject.entity';
@@ -15,22 +19,36 @@ export class SubjectsService {
     subjectName: string,
     description?: string,
   ) {
-    // Sử dụng đúng tên thuộc tính: SubjectID, SubjectName, Description
-    const subject = this.subjectRepo.create({
-      SubjectID: subjectId,
-      SubjectName: subjectName,
-      Description: description,
-    });
-    return await this.subjectRepo.save(subject);
+    try {
+      const subject = this.subjectRepo.create({
+        SubjectID: subjectId,
+        SubjectName: subjectName,
+        Description: description,
+      });
+      return await this.subjectRepo.save(subject);
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as any).code
+      ) {
+        const code = (error as any).code;
+
+        if (code === '23505' || code === 'ER_DUP_ENTRY') {
+          throw new ConflictException('Tên môn học đã tồn tại');
+        }
+      }
+
+      throw error;
+    }
   }
 
   async getAllSubjects() {
-    // Sắp xếp theo cột SubjectName
     return await this.subjectRepo.find({ order: { SubjectName: 'ASC' } });
   }
 
   async getSubjectSummary() {
-    // Dùng QueryBuilder để thay thế cho hàm count của Django
     const query = this.subjectRepo
       .createQueryBuilder('subject')
       .leftJoin('subject.chapters', 'chapter')
@@ -40,10 +58,8 @@ export class SubjectsService {
         'subject.SubjectName AS name',
         'subject.Description AS description',
       ])
-      // Sử dụng đúng khóa chính của từng bảng liên kết
       .addSelect('COUNT(DISTINCT chapter.ChapterID)', 'chapterCount')
       .addSelect('COUNT(DISTINCT lesson.LessonID)', 'lessonCount')
-      // Group By tất cả các trường được Select mà không nằm trong hàm tập hợp
       .groupBy('subject.SubjectID, subject.SubjectName, subject.Description');
 
     return await query.getRawMany();
@@ -54,24 +70,30 @@ export class SubjectsService {
   }
 
   async updateSubject(id: string, subjectName?: string, description?: string) {
-    const subject = await this.getSubjectById(id);
-    if (!subject) throw new NotFoundException('Môn học không tồn tại');
+    // Tối ưu: Dùng update() trực tiếp thay vì findOne() + save()
+    const updateData: Partial<Subject> = {};
+    if (subjectName !== undefined) updateData.SubjectName = subjectName;
+    if (description !== undefined) updateData.Description = description;
 
-    // Cập nhật giá trị vào đúng các thuộc tính viết hoa
-    if (subjectName !== undefined) subject.SubjectName = subjectName;
-    if (description !== undefined) subject.Description = description;
+    const result = await this.subjectRepo.update({ SubjectID: id }, updateData);
 
-    return await this.subjectRepo.save(subject);
+    if (result.affected === 0) {
+      throw new NotFoundException('Môn học không tồn tại');
+    }
+
+    // Trả về dữ liệu mới nhất
+    return this.getSubjectById(id);
   }
 
   async deleteSubject(id: string) {
-    const subject = await this.getSubjectById(id);
-    if (!subject) throw new NotFoundException('Môn học không tồn tại');
-    await this.subjectRepo.remove(subject);
+    // Tối ưu: Dùng delete() trực tiếp
+    const result = await this.subjectRepo.delete({ SubjectID: id });
+    if (result.affected === 0) {
+      throw new NotFoundException('Môn học không tồn tại');
+    }
   }
 
   async getContentHierarchy(subjectId: string) {
-    // Thay thế prefetch_related của Django bằng relations Object của TypeORM mới
     const subject = await this.subjectRepo.findOne({
       where: { SubjectID: subjectId },
       relations: {
@@ -96,7 +118,6 @@ export class SubjectsService {
 
     if (!subject) return null;
 
-    // Chuẩn hóa toàn bộ cấu trúc trả về sang tiếng Anh với Dấu ?. để đảm bảo an toàn
     return {
       subject: {
         id: subject.SubjectID,
@@ -106,15 +127,17 @@ export class SubjectsService {
       chapters:
         subject.chapters?.map((chapter) => ({
           id: chapter.ChapterID,
-          name: chapter.ChapterName,
-          lessons: chapter.lessons?.map((lesson) => ({
-            id: lesson.LessonID,
-            name: lesson.LessonName,
-            skills: lesson.skills?.map((skill) => ({
-              id: skill.SkillID,
-              name: skill.SkillName,
-            })),
-          })),
+          name: chapter.ChapterName, // Giả định Entity Chapter có cột ChapterName
+          lessons:
+            chapter.lessons?.map((lesson) => ({
+              id: lesson.LessonID,
+              name: lesson.LessonName, // Giả định Entity Lesson có cột LessonName
+              skills:
+                lesson.skills?.map((skill) => ({
+                  id: skill.SkillID,
+                  name: skill.SkillName, // Giả định Entity Skill có cột SkillName
+                })) || [],
+            })) || [],
         })) || [],
     };
   }

@@ -10,6 +10,7 @@ import { Skill } from '@modules/skills/entities/skill.entity';
 import { AnswerChoice } from '@modules/exams/entities/answer-choice.entity';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
+import { Difficulty, KnowledgeType } from './entities/question.entity';
 
 @Injectable()
 export class QuestionsService {
@@ -191,18 +192,25 @@ export class QuestionsService {
     const stats = {
       total_questions: questions.length,
       by_difficulty: {
-        De: questions.filter((q) => q.Difficulty === 'De').length,
-        TrungBinh: questions.filter((q) => q.Difficulty === 'TrungBinh').length,
-        Kho: questions.filter((q) => q.Difficulty === 'Kho').length,
+        De: questions.filter((q) => q.Difficulty === Difficulty.DE).length,
+        TrungBinh: questions.filter(
+          (q) => q.Difficulty === Difficulty.TRUNG_BINH,
+        ).length,
+        Kho: questions.filter((q) => q.Difficulty === Difficulty.KHO).length,
       },
       by_knowledge_type: {
-        KhaiNiem: questions.filter((q) => q.KnowledgeType === 'KhaiNiem')
-          .length,
-        DinhLy: questions.filter((q) => q.KnowledgeType === 'DinhLy').length,
-        TinhChat: questions.filter((q) => q.KnowledgeType === 'TinhChat')
-          .length,
-        DangBaiTap: questions.filter((q) => q.KnowledgeType === 'DangBaiTap')
-          .length,
+        KhaiNiem: questions.filter(
+          (q) => q.KnowledgeType === KnowledgeType.KHAI_NIEM,
+        ).length,
+        DinhLy: questions.filter(
+          (q) => q.KnowledgeType === KnowledgeType.DINH_LY,
+        ).length,
+        TinhChat: questions.filter(
+          (q) => q.KnowledgeType === KnowledgeType.TINH_CHAT,
+        ).length,
+        DangBaiTap: questions.filter(
+          (q) => q.KnowledgeType === KnowledgeType.DANG_BAI_TAP,
+        ).length,
       },
     };
 
